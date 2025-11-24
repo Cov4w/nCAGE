@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cage_unitree"
+version = "0.1.0"
+description = "Unitree Go2 WebRTC Control System"
+requires-python = ">=3.8"
+dependencies = [
+    "flask",
+    "flask-socketio",
+    "av",
+    "numpy",
+    "ultralytics",
+    "aiortc",
+    # Dependencies from go2_webrtc_connect
+    "pycryptodome",
+    "opencv-python",
+    "sounddevice",
+    "pyaudio",
+    "requests",
+    "wasmtime",
+    "lz4",
+    "pydub"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

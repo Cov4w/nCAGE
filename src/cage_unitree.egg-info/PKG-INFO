@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: cage_unitree
+Version: 0.1.0
+Summary: Unitree Go2 WebRTC Control System
+Requires-Python: >=3.8
+Requires-Dist: flask
+Requires-Dist: flask-socketio
+Requires-Dist: av
+Requires-Dist: numpy
+Requires-Dist: ultralytics
+Requires-Dist: aiortc
+Requires-Dist: pycryptodome
+Requires-Dist: opencv-python
+Requires-Dist: sounddevice
+Requires-Dist: pyaudio
+Requires-Dist: requests
+Requires-Dist: wasmtime
+Requires-Dist: lz4
+Requires-Dist: pydub

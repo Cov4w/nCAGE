@@ -1,0 +1,20 @@
+# Ignore Python bytecode
+__pycache__/
+
+# Ignore environment file
+.env
+
+# Ignore .DS_Store files
+# 맥 OS에서만 생성 및 사용되는 파일
+.DS_Store
+
+.unitree_token
+.bms_state.json
+.qr_encryption_key
+users_database.json
+qr_codes
+qr_sample
+aruco_identities.json
+aruco_identity_markers
+.voice_status.json
+.webrtc_connection_status.json

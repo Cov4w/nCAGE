@@ -1,0 +1,14 @@
+flask
+flask-socketio
+av
+numpy
+ultralytics
+aiortc
+pycryptodome
+opencv-python
+sounddevice
+pyaudio
+requests
+wasmtime
+lz4
+pydub
