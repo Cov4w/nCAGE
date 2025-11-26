@@ -160,6 +160,10 @@
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
             cursor: pointer;
+            /* 🆕 터치 스크롤 방지 (중요) */
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         /* 🔧 조이스틱 호버 효과 */
@@ -629,57 +633,58 @@
             }
         }
 
-        // 🔧 조이스틱 생성 함수 (기존 로직 유지)
+        // 🔧 조이스틱 생성 함수 (개선됨)
         function createJoystick() {
             console.log('🕹️ 조이스틱 생성 시작...');
 
             const joystickZone = document.getElementById('joystick-zone');
-            if (!joystickZone) {
-                console.error('❌ joystick-zone 요소를 찾을 수 없습니다.');
-                addLog('❌ 조이스틱 영역을 찾을 수 없습니다.');
-                return;
-            }
+            if (!joystickZone) return;
 
-            // 기존 조이스틱이 있다면 제거
+            // 기존 조이스틱 제거
             if (joystick) {
-                try {
-                    joystick.destroy();
-                } catch (e) {
-                    console.warn('⚠️ 조이스틱 제거 중 경고:', e);
-                }
+                joystick.destroy();
                 joystick = null;
             }
 
-            // 🔧 레이아웃 변경 완료 대기
+            // 🔧 레이아웃 변경 완료 대기 (시간을 좀 더 넉넉히)
             setTimeout(() => {
                 try {
-                    // 🔧 joystick-zone 크기 측정
+                    // 🔧 joystick-zone 크기 및 위치 재계산
                     const zoneRect = joystickZone.getBoundingClientRect();
+
+                    // 영역이 보이지 않거나 크기가 0이면 생성하지 않음
+                    if (zoneRect.width === 0 || zoneRect.height === 0) {
+                        console.warn('⚠️ 조이스틱 영역이 보이지 않습니다.');
+                        return;
+                    }
+
                     const zoneSize = Math.min(zoneRect.width, zoneRect.height);
-                    const joystickSize = Math.floor(zoneSize * 0.7); // zone의 70%
+                    const joystickSize = Math.floor(zoneSize * 0.6); // 크기 약간 줄임
 
-                    console.log(`🎯 조이스틱 크기: ${joystickSize}px`);
+                    console.log(`🎯 조이스틱 생성: Zone=${zoneRect.width}x${zoneRect.height}, Size=${joystickSize}`);
 
-                    // 🔧 nipplejs 조이스틱 생성 (기존 설정 유지)
+                    // 🔧 nipplejs 조이스틱 생성
+                    // mode: 'static'은 position이 zone 내부의 상대 위치(top/left)를 의미함
                     joystick = nipplejs.create({
                         zone: joystickZone,
                         mode: 'static',
                         position: { left: '50%', top: '50%' },
-                        color: 'blue',
-                        size: joystickSize > 0 ? joystickSize : 150 // 기본값 150
+                        color: '#007bff',
+                        size: joystickSize,
+                        threshold: 0.1, // 민감도 조절
+                        restJoystick: true
                     });
 
-                    // 🔧 기존 이벤트 핸들러 완전히 유지
+                    // 🔧 이벤트 핸들러
                     joystick.on('move', function (evt, data) {
-                        if (data && data.distance > 10) {
-                            let rad = data.angle.radian;
-                            let x = Math.sin(rad) * (data.distance / 100);
-                            let z = Math.cos(rad) * (data.distance / -75);
-                            current.x = x;
-                            current.z = z;
-                        } else {
-                            current.x = 0;
-                            current.z = 0;
+                        if (data && data.vector) {
+                            // vector: {x: -1~1, y: -1~1} 정규화된 벡터 사용이 더 안전함
+                            let x = data.vector.x;
+                            let z = -data.vector.y; // Y축 반전 (화면 위쪽이 로봇 전진)
+
+                            // 값 제한 (-1.0 ~ 1.0)
+                            current.x = Math.max(-1.0, Math.min(1.0, x));
+                            current.z = Math.max(-1.0, Math.min(1.0, z));
                         }
                         if (!sending) startSending();
                     });
@@ -696,16 +701,21 @@
                         joystickZone.classList.add('active');
                     });
 
-                    addLog(`✅ 조이스틱 생성 완료`);
-                    console.log('🎉 조이스틱 생성 완료');
+                    console.log('✅ 조이스틱 생성 완료');
 
                 } catch (error) {
                     console.error('❌ 조이스틱 생성 실패:', error);
-                    addLog('❌ 조이스틱 생성 실패: ' + error.message);
                 }
-            }, 300);
+            }, 500); // 500ms 대기 (레이아웃 안정화)
         }
 
+        // 🆕 창 크기 변경 시 조이스틱 재생성 (위치 보정)
+        window.addEventListener('resize', () => {
+            if (document.getElementById('control-sidebar').classList.contains('active')) {
+                clearTimeout(window.resizeTimer);
+                window.resizeTimer = setTimeout(createJoystick, 300);
+            }
+        });
         // 🔧 기존 전송 함수들 완전히 유지
         function startSending() {
             sending = true;

@@ -5,6 +5,7 @@ import logging
 import json
 import av
 import os
+import queue
 from multiprocessing import Queue
 from cage_unitree.go2_webrtc_connect.go2_webrtc_driver.webrtc_driver import Go2WebRTCConnection, WebRTCConnectionMethod
 from cage_unitree.go2_webrtc_connect.go2_webrtc_driver.constants import RTC_TOPIC, SPORT_CMD
@@ -35,8 +36,8 @@ logging.basicConfig(level=logging.INFO)
 
 _conn_holder = {}
 
-# 최신 조이스틱 값만 저장 (sitdown/situp 등은 큐 사용)
-latest_joystick = None
+# 최신 조이스틱 값만 저장 (Thread-Safe Queue 사용)
+joystick_queue = queue.Queue(maxsize=1)
 robot_state = "unknown"  # 초기 상태는 unknown
 robot_state_history = []  # 🆕 상태 이력 추적
 robot_state_lock = threading.Lock()  # 🆕 상태 변경 동기화
@@ -107,7 +108,7 @@ def start_webrtc(frame_queue, command_queue):
             print(f"[모드 확인] 에러 발생: {e}")
 
     async def handle_command(conn):
-        global latest_joystick
+        # global latest_joystick  <-- Removed
         while True:
             # sitdown/situp 등은 큐에서 처리
             if not command_queue.empty():
@@ -338,15 +339,19 @@ def start_webrtc(frame_queue, command_queue):
                 
                 # 기타 명령은 필요시 추가
             
-            # 최신 조이스틱 값만 사용
-            if latest_joystick is not None:
-                _, x, z = latest_joystick
-                print(f"Joystick command (latest): x={x}, z={z}")
-                response = await conn.datachannel.pub_sub.publish_request_new(
-                    RTC_TOPIC["SPORT_MOD"],
-                    {"api_id": SPORT_CMD["Move"], "parameter": {"x": float(x), "y": 0, "z": float(z)}}
-                )
-                print("Move response:", response)
+            # 최신 조이스틱 값만 사용 (Queue에서 가져오기)
+            if not joystick_queue.empty():
+                try:
+                    cmd_data = joystick_queue.get_nowait()
+                    _, x, z = cmd_data
+                    print(f"Joystick command (queue): x={x}, z={z}")
+                    response = await conn.datachannel.pub_sub.publish_request_new(
+                        RTC_TOPIC["SPORT_MOD"],
+                        {"api_id": SPORT_CMD["Move"], "parameter": {"x": float(x), "y": 0, "z": float(z)}}
+                    )
+                    # print("Move response:", response) # 너무 많으면 주석 처리
+                except queue.Empty:
+                    pass
                 
             await asyncio.sleep(0.1)  # 100ms마다 체크
 
@@ -534,9 +539,14 @@ async def get_robot_bms_status():
 
 # 외부에서 명령을 큐에 넣는 함수
 def send_command(command_queue, direction):
-    global latest_joystick
     if isinstance(direction, tuple) and direction[0] == 'joystick':
-        latest_joystick = direction  # 최신 값으로 덮어쓰기
+        # Thread-Safe Queue에 최신 값만 유지 (Overwrite)
+        if joystick_queue.full():
+            try:
+                joystick_queue.get_nowait()  # 꽉 찼으면 오래된 값 버림
+            except queue.Empty:
+                pass
+        joystick_queue.put(direction)
     else:
         command_queue.put(direction)  # sitdown, situp 등은 기존 큐 사용
 
