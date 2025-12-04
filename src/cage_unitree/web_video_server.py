@@ -874,7 +874,7 @@ if __name__ == '__main__':
     
     try:
         # SocketIO 서버 실행 (기존 Flask 대신)
-        socketio.run(app, host='0.0.0.0', port=5015, debug=False, allow_unsafe_werkzeug=True)
+        socketio.run(app, host='0.0.0.0', port=5100, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         print("\n🛑 서버 종료")
         if lidar_enabled:
