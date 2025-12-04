@@ -17,3 +17,5 @@ Requires-Dist: requests
 Requires-Dist: wasmtime
 Requires-Dist: lz4
 Requires-Dist: pydub
+Requires-Dist: PyJWT
+Requires-Dist: python-dotenv
