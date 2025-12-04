@@ -22,7 +22,9 @@ dependencies = [
     "requests",
     "wasmtime",
     "lz4",
-    "pydub"
+    "pydub",
+    "PyJWT",
+    "python-dotenv"
 ]
 
 [tool.setuptools.packages.find]

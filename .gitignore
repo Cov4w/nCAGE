@@ -3,6 +3,8 @@ __pycache__/
 
 # Ignore environment file
 .env
+.venv/
+
 
 # Ignore .DS_Store files
 # 맥 OS에서만 생성 및 사용되는 파일

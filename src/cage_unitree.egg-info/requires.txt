@@ -12,3 +12,5 @@ requests
 wasmtime
 lz4
 pydub
+PyJWT
+python-dotenv
