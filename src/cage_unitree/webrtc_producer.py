@@ -347,7 +347,7 @@ def start_webrtc(frame_queue, command_queue):
                     print(f"Joystick command (queue): x={x}, z={z}")
                     response = await conn.datachannel.pub_sub.publish_request_new(
                         RTC_TOPIC["SPORT_MOD"],
-                        {"api_id": SPORT_CMD["Move"], "parameter": {"x": float(x), "y": 0, "z": float(z)}}
+                        {"api_id": SPORT_CMD["Move"], "parameter": {"x": float(-z), "y": 0, "z": float(-x)}}
                     )
                     # print("Move response:", response) # 너무 많으면 주석 처리
                 except queue.Empty:

@@ -371,6 +371,21 @@
             </p>
         </div>
 
+        <!-- 🆕 신원 확인 섹션 -->
+        <div class="control-section full-width-section">
+            <h3>🆔 신원 확인</h3>
+            <p style="margin: 5px 0; color: #666;">
+                로봇이 앉아서 얼굴을 인식하고 신원을 확인합니다.
+            </p>
+            <div class="status-display" id="verify-status-display" style="display:none;">
+                <span class="status-indicator" id="verify-indicator"></span>
+                <strong>결과:</strong> <span id="verify-result-text">대기 중</span>
+            </div>
+            <button onclick="verifyIdentity()" class="btn btn-info" id="verify-btn">
+                👤 신원 확인 시작
+            </button>
+        </div>
+
 
         <!-- 🆕 메인 레이아웃: 비디오 + 제어 패널 -->
         <div class="main-layout">
@@ -507,6 +522,56 @@
                 toggleBtn.textContent = '🎯 YOLO 활성화';
                 toggleBtn.className = 'btn btn-success';
             }
+        }
+
+        // 🆕 신원 확인 함수
+        function verifyIdentity() {
+            const btn = document.getElementById('verify-btn');
+            const statusDisplay = document.getElementById('verify-status-display');
+            const indicator = document.getElementById('verify-indicator');
+            const resultText = document.getElementById('verify-result-text');
+
+            // UI 초기화
+            btn.disabled = true;
+            btn.textContent = '⏳ 확인 중... (약 5-10초 소요)';
+            statusDisplay.style.display = 'block';
+            indicator.className = 'status-indicator status-scanning'; // 노란색
+            resultText.textContent = '로봇이 자세를 잡고 얼굴을 인식 중입니다...';
+
+            addLog('🆔 신원 확인 요청: 로봇이 Sit 자세로 전환합니다...');
+
+            fetch('/verify_identity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        if (data.verified) {
+                            indicator.className = 'status-indicator status-on'; // 초록색
+                            resultText.textContent = `✅ 확인됨: ${data.name}`;
+                            addLog(`✅ 신원 확인 성공: ${data.name}`);
+                        } else {
+                            indicator.className = 'status-indicator status-off'; // 빨간색
+                            resultText.textContent = '❌ 확인 불가 (Unknown)';
+                            addLog('❌ 신원 확인 실패: 등록된 얼굴이 아닙니다.');
+                        }
+                    } else {
+                        indicator.className = 'status-indicator status-off';
+                        resultText.textContent = `⚠️ 오류: ${data.message}`;
+                        addLog(`⚠️ 신원 확인 오류: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    indicator.className = 'status-indicator status-off';
+                    resultText.textContent = `❌ 통신 오류: ${error}`;
+                    addLog(`❌ 신원 확인 통신 오류: ${error}`);
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = '👤 신원 확인 시작';
+                    addLog('🤖 로봇이 Stand 자세로 복구됩니다.');
+                });
         }
 
 

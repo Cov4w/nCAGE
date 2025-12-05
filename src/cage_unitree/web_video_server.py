@@ -13,7 +13,7 @@ import os
 from datetime import datetime
 import asyncio
 import traceback
-
+from cage_unitree.telegram_bot import TelegramBot
 
 logging.basicConfig(level=logging.INFO)
 
@@ -21,14 +21,24 @@ logging.basicConfig(level=logging.INFO)
 base_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(base_dir, 'templates')
 
+# 🆕 Telegram Bot 설정
+telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+bot = TelegramBot(telegram_token, telegram_chat_id)
+
 app = Flask(__name__, template_folder=template_dir)
 socketio = SocketIO(app, cors_allowed_origins="*")
 frame_queue = Queue(maxsize=10)
 command_queue = Queue(maxsize=10)
+latest_frame = None  # 🆕 최신 프레임 캐싱용
+
+# Fire Alert Variables
+last_fire_alert_time = 0
+FIRE_ALERT_COOLDOWN = 60 # seconds
 
 # YOLO 모델 로드
 try:
-    model_path = os.path.join(template_dir, 'best.pt')
+    model_path = os.path.join(template_dir, 'fire_best.pt')
     yolo_model = YOLO(model_path)
     print(f"✅ YOLO 모델 로드 성공: {model_path}")
 except Exception as e:
@@ -46,7 +56,7 @@ fire_last_alert_time = None
 fire_detection_active = True
 fire_alert_count = 0  # 🆕 알림 카운터 추가
 FIRE_DETECTION_THRESHOLD = 5.0
-FIRE_CONFIDENCE_THRESHOLD = 0.5
+FIRE_CONFIDENCE_THRESHOLD = 0.4
 FIRE_ALERT_INTERVAL = 5.0
 
 # 🆕 YOLO 활성화 상태 변수
@@ -97,8 +107,20 @@ def check_fire_detection(current_boxes):
         if detection_duration >= FIRE_DETECTION_THRESHOLD and fire_last_alert_time is None:
             # 🔧 첫 번째 알림 (5초 후)
             fire_alert_count = 1  # 🆕 첫 번째 알림
-            print(f"🚨 화재 첫 알림! ({detection_duration:.1f}초 연속 감지)")
-            # save_fire_alert(is_repeat=False, alert_count=fire_alert_count) # Removed Discord alert
+            msg = f"🚨 화재 첫 알림! ({detection_duration:.1f}초 연속 감지)"
+            print(msg)
+            bot.send_message(msg)
+            
+            # 이미지 전송 (latest_frame 사용)
+            if latest_frame is not None:
+                fire_img_path = os.path.join(base_dir, "temp", f"fire_{int(current_time)}.jpg")
+                # temp 폴더 확인
+                temp_dir = os.path.dirname(fire_img_path)
+                if not os.path.exists(temp_dir): os.makedirs(temp_dir)
+                
+                cv2.imwrite(fire_img_path, latest_frame)
+                bot.send_image(fire_img_path, caption=msg)
+
             fire_last_alert_time = current_time
             
         elif (fire_last_alert_time is not None and 
@@ -127,46 +149,21 @@ def generate():
     last_boxes = []
     last_boxes = []
     
-    # 🆕 목표 해상도 설정
-    TARGET_WIDTH = 640
-    TARGET_HEIGHT = 360
-    JPEG_QUALITY = 85  # JPEG 품질 (1-100)
+    JPEG_QUALITY = 95  # JPEG 품질 상향 (85 -> 95)
     
     while True:
         if not frame_queue.empty():
             img = frame_queue.get()
+            
+            # 🆕 최신 프레임 캐싱 (신원 확인용)
+            global latest_frame
+            latest_frame = img.copy()
+            
             now = time.time()
             
-            # 🆕 이미지 해상도 확인 및 조정
-            original_height, original_width = img.shape[:2]
-            
-            if original_width != TARGET_WIDTH or original_height != TARGET_HEIGHT:
-                # 비율 유지하면서 리사이즈
-                aspect_ratio = original_width / original_height
-                target_aspect_ratio = TARGET_WIDTH / TARGET_HEIGHT
-                
-                if aspect_ratio > target_aspect_ratio:
-                    # 가로가 더 긴 경우
-                    new_width = TARGET_WIDTH
-                    new_height = int(TARGET_WIDTH / aspect_ratio)
-                else:
-                    # 세로가 더 긴 경우
-                    new_height = TARGET_HEIGHT
-                    new_width = int(TARGET_HEIGHT * aspect_ratio)
-                
-                # 이미지 리사이즈
-                img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
-                
-                # 중앙 정렬을 위한 패딩 (필요한 경우)
-                if new_width != TARGET_WIDTH or new_height != TARGET_HEIGHT:
-                    # 검은색 배경에 중앙 정렬
-                    pad_img = np.zeros((TARGET_HEIGHT, TARGET_WIDTH, 3), dtype=np.uint8)
-                    start_y = (TARGET_HEIGHT - new_height) // 2
-                    start_x = (TARGET_WIDTH - new_width) // 2
-                    pad_img[start_y:start_y+new_height, start_x:start_x+new_width] = img
-                    img = pad_img
-                
-                print(f"📺 해상도 조정: {original_width}x{original_height} → {TARGET_WIDTH}x{TARGET_HEIGHT}")
+            # 🆕 이미지 해상도 확인 및 조정 (제거됨 - 원본 사용)
+            # original_height, original_width = img.shape[:2]
+            # print(f"📺 원본 해상도: {original_width}x{original_height}")
             
             # 🔧 YOLO 감지 (완전한 기존 로직 복원)
             if yolo_active and yolo_model and now - last_detect_time > 1.0:
@@ -501,8 +498,8 @@ async def lidar_webrtc_connection():
     
     while lidar_enabled:
         try:
-            # � 기존 연결 재사용 시도
-            from webrtc_producer import _conn_holder
+            # 🔧 기존 연결 재사용 시도
+            from cage_unitree.webrtc_producer import _conn_holder
             
             conn = None
             use_existing_connection = False
@@ -799,21 +796,153 @@ def stop_lidar():
 
 @app.route('/lidar_status', methods=['GET'])
 def lidar_status():
-    """LIDAR 상태 확인"""
-    global message_count, lidar_connection
+    """LIDAR 상태 반환"""
+    global lidar_enabled, message_count, lidar_connection
     
-    # 연결 상태 확인
+    connection_healthy = False
     connection_state = 'unknown'
+    
     if lidar_connection and hasattr(lidar_connection, '_peer_connection'):
         connection_state = getattr(lidar_connection._peer_connection, 'connectionState', 'unknown')
+        connection_healthy = connection_state in ['connected', 'connecting']
     
     return jsonify({
         'lidar_enabled': lidar_enabled,
-        'lidar_view_mode': lidar_view_mode,
         'message_count': message_count,
-        'connection_state': connection_state,
-        'connection_healthy': connection_state in ['connected', 'connecting']
+        'connection_healthy': connection_healthy,
+        'connection_state': connection_state
     })
+
+# 🆕 Face Recognition Route
+@app.route('/verify_identity', methods=['POST'])
+def verify_identity():
+    """
+    신원 확인 프로세스:
+    1. Sit 자세로 전환
+    2. 얼굴 인식 수행 (DeepFace)
+    3. 결과 반환 및 Stand 자세로 복구
+    """
+    global frame_queue, command_queue
+    
+    try:
+        from deepface import DeepFace
+        import cv2
+        import time
+        import os
+        
+        print("🆔 신원 확인 프로세스 시작...")
+        
+        # 1. Sit 자세로 전환
+        print("🤖 로봇 자세 변경: Sit")
+        send_command(command_queue, "sit")
+        
+        # 자세 안정화를 위해 대기 (3초)
+        time.sleep(3)
+        
+        # 3. 얼굴 인식 수행 (15초간 재시도)
+        print("🔍 얼굴 인식 수행 중... (최대 30초 대기)")
+        identified_name = "Unknown"
+        verified = False
+        
+        # 🆕 변수 정의 복구
+        temp_dir = os.path.join(os.path.dirname(base_dir), "temp") # src/temp
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        temp_img_path = os.path.join(temp_dir, "temp_verify.jpg")
+        
+        db_path = os.path.join(base_dir, "faces")
+        if not os.path.exists(db_path):
+            os.makedirs(db_path)
+        
+        start_time = time.time()
+        timeout = 30.0
+        
+        while (time.time() - start_time) < timeout:
+            try:
+                # 현재 프레임 캡처 (최신 프레임 갱신)
+                if latest_frame is None:
+                    time.sleep(0.1)
+                    continue
+                    
+                frame = latest_frame.copy()
+                
+                # 임시 파일 저장
+                cv2.imwrite(temp_img_path, frame)
+                
+                # DeepFace.find 호출
+                # enforce_detection=True로 설정하여 얼굴이 없으면 예외 발생 -> 재시도
+                find_start_time = time.time()
+                dfs = DeepFace.find(
+                    img_path=temp_img_path, 
+                    db_path=db_path, 
+                    model_name="ArcFace", # � 가벼운 모델로 복구
+                    detector_backend="mediapipe", # 🔙 빠른 백엔드로 복구
+                    enforce_detection=True, 
+                    silent=True
+                )
+                find_end_time = time.time()
+                print(f"⏱️ 인식 소요 시간: {find_end_time - find_start_time:.2f}초")
+                
+                if len(dfs) > 0:
+                    df = dfs[0]
+                    if not df.empty:
+                        # 디버깅: 상위 3개 매칭 결과 출력
+                        print(f"📊 매칭 후보 {len(df)}개 발견:")
+                        for idx, row in df.head(3).iterrows():
+                            print(f"   - 후보 {idx+1}: {row['identity']} (거리: {row['distance']:.4f})")
+                            
+                        best_match = df.iloc[0]
+                        matched_path = best_match['identity']
+                        distance = best_match['distance']
+                        
+                        # ArcFace의 일반적인 Threshold는 0.68 정도이나, DeepFace 내부 기본값 사용 중
+                        # 너무 엄격하다면 threshold 인자를 직접 조정 가능 (예: threshold=0.75)
+                        
+                        print(f"✅ 최적 매칭! 거리: {distance:.4f}, 경로: {matched_path}")
+                        
+                        rel_path = os.path.relpath(matched_path, db_path)
+                        identified_name = rel_path.split(os.sep)[0]
+                        verified = True
+                        msg = f"✅ 신원 확인 완료: {identified_name}"
+                        print(msg)
+                        bot.send_message(msg)
+                        break # 성공 시 루프 종료
+                    else:
+                        print("❌ 매칭되는 얼굴 없음 (DataFrame 비어있음)")
+                else:
+                    print("❌ 매칭되는 얼굴 없음 (결과 리스트 비어있음)")
+                    
+            except ValueError as ve:
+                # 얼굴을 찾지 못함 (enforce_detection=True)
+                # print(f"⚠️ 얼굴 감지 실패: {ve} (재시도 중...)")
+                pass
+            except Exception as e:
+                print(f"⚠️ 오류 발생: {e}")
+                pass
+            
+            time.sleep(0.2) # 0.2초 대기 후 재시도
+            
+        if not verified:
+            msg = "❌ 최종 신원 확인 실패: 시간 초과 또는 매칭 실패"
+            print(msg)
+            bot.send_message(msg)
+            # 실패한 사진 전송
+            bot.send_image(temp_img_path, caption="신원 확인 실패 사진")
+            
+        # 4. Stand 자세로 복구 (SitUp -> BalanceStand)
+        print("🤖 로봇 자세 복구: Stand Up")
+        send_command(command_queue, "situp") # situp 명령이 standup 시퀀스를 포함함
+        
+        # 결과 반환
+        return jsonify({
+            'status': 'success',
+            'verified': verified,
+            'name': identified_name
+        })
+        
+    except Exception as e:
+        print(f"❌ 신원 확인 프로세스 오류: {e}")
+        return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/restart_lidar', methods=['POST'])
 def restart_lidar():

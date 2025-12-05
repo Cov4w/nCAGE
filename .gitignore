@@ -18,3 +18,7 @@ aruco_identities.json
 aruco_identity_markers
 .voice_status.json
 .webrtc_connection_status.json
+faces
+temp
+clean_faces.py
+test_recognition_local.py
